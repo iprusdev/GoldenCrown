@@ -1,4 +1,5 @@
 ﻿using GoldenCrown.Models;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using static System.Collections.Specialized.BitVector32;
 
@@ -40,7 +41,6 @@ namespace GoldenCrown.Data
                 .WithMany(user => user.ReceivedTransactions)
                 .HasForeignKey(transaction => transaction.ReceiverId)
                 .OnDelete(DeleteBehavior.Restrict);
-
 
             modelBuilder.Entity<User>()
                 .Property(user => user.Login)
