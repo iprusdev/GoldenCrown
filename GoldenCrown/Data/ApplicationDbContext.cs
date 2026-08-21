@@ -77,6 +77,31 @@ namespace GoldenCrown.Data
             modelBuilder.Entity<Transaction>()
                 .Property(transaction => transaction.Amount)
                 .HasPrecision(18, 2);
+
+
+           modelBuilder.Entity<User>().HasData(
+         new
+         {
+             Id = 1,
+             Login = "testuser1",
+             Name = "Test User 1",
+             PasswordHash = "seed-test-hash-1"
+         },
+         new
+         {
+             Id = 2,
+             Login = "testuser2",
+             Name = "Test User 2",
+             PasswordHash = "seed-test-hash-2"
+         },
+         new
+         {
+             Id = 3,
+             Login = "testuser3",
+             Name = "Test User 3",
+             PasswordHash = "seed-test-hash-3"
+         }
+);
         }
     }
 }
