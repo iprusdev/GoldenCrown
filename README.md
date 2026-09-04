@@ -14,7 +14,7 @@ GoldenCrown is an educational banking REST API built with ASP.NET Core and Entit
 
 The application uses SQL Server for persistence and exposes Swagger UI in the Development environment.
 
-> **Security note:** the current implementation stores and compares passwords as plain strings, despite the `PasswordHash` property name. Use a password hasher before deploying this project outside a learning environment.
+Passwords are hashed with ASP.NET Core's `PasswordHasher<TUser>`. Passwords stored by an older version of the application are upgraded to the hashed format after the user's next successful login.
 
 ## Technology stack
 
@@ -146,7 +146,7 @@ Successful response (`200 OK`):
 }
 ```
 
-Invalid input returns `400 Bad Request`; an unknown user or unsuccessful login returns `404 Not Found`.
+Invalid input returns `400 Bad Request`; invalid credentials return `401 Unauthorized`.
 
 ### Get the current balance
 
@@ -194,7 +194,7 @@ curl -X POST "http://localhost:5256/api/Finance/transfer" \
   }'
 ```
 
-`receiverLogin` is required and `amount` must be greater than zero. A successful request returns `200 OK`. The API returns `400 Bad Request` when the receiver does not exist or the sender has insufficient funds.
+`receiverLogin` is required and `amount` must be greater than zero. A successful request returns `200 OK`. The API returns `400 Bad Request` when the receiver does not exist, the sender has insufficient funds, or the sender tries to transfer money to the same account.
 
 ### Get transaction history
 
@@ -285,7 +285,7 @@ Users 1 ─── many Transactions (ReceiverId)
 
 The `SeedData` migration creates these users:
 
-| Id | Login | Name | Stored password value |
+| Id | Login | Name | Login password |
 | --- | --- | --- | --- |
 | 1 | `testuser1` | Test User 1 | `seed-test-hash-1` |
 | 2 | `testuser2` | Test User 2 | `seed-test-hash-2` |

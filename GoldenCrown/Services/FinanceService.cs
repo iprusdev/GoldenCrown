@@ -28,34 +28,64 @@ namespace GoldenCrown.Services
         }
         public async Task<Result> DepositAsync(int userId, decimal amount)
         {
+            if (amount <= 0)
+            {
+                return Result.Failure("Сумма должна быть больше нуля");
+            }
 
-            var user = await _context.Users.FirstOrDefaultAsync(a => a.Id == userId);
-            var account = await _context.Accounts.FirstOrDefaultAsync(b => b.UserId == user!.Id);
+            var account = await _context.Accounts.FirstOrDefaultAsync(b => b.UserId == userId);
+            if (account == null)
+            {
+                return Result.Failure("Счёт не найден");
+            }
 
-            account!.Balance += amount;
+            account.Balance += amount;
             await _context.SaveChangesAsync();
             return Result.Success();
         }
         public async Task<Result> TransferAsync(int fromUserId, string receiverLogin, decimal amount)
         {
+            if (amount <= 0)
+            {
+                return Result.Failure("Сумма должна быть больше нуля");
+            }
+
             var fromSender = await _context.Users.FirstOrDefaultAsync(a => a.Id == fromUserId);
-            var toSender = await _context.Accounts.FirstOrDefaultAsync(a => a.UserId == fromSender!.Id);
-            //
-            var userReceiver = await _context.Users.FirstOrDefaultAsync(a => a!.Login == receiverLogin);
+            if (fromSender == null)
+            {
+                return Result.Failure("Отправитель не найден");
+            }
+
+            var toSender = await _context.Accounts.FirstOrDefaultAsync(a => a.UserId == fromSender.Id);
+            if (toSender == null)
+            {
+                return Result.Failure("Счёт отправителя не найден");
+            }
+
+            var userReceiver = await _context.Users.FirstOrDefaultAsync(a => a.Login == receiverLogin);
             if (userReceiver == null)
             {
                 return Result.Failure("Получатель не найден");
             }
-            var toReceiver = await _context.Accounts.FirstOrDefaultAsync(a => a.User == userReceiver);
+
+            if (userReceiver.Id == fromUserId)
+            {
+                return Result.Failure("Нельзя перевести средства самому себе");
+            }
+
+            var toReceiver = await _context.Accounts.FirstOrDefaultAsync(a => a.UserId == userReceiver.Id);
+            if (toReceiver == null)
+            {
+                return Result.Failure("Счёт получателя не найден");
+            }
+
             if (toSender.Balance < amount)
             {
                 return Result.Failure("Недостаточно средств");
             }
-            if (toSender.Balance>0 && toSender.Balance > amount)
-            {
-                toSender.Balance -= amount;
-                toReceiver.Balance += amount;
-            }
+
+            toSender.Balance -= amount;
+            toReceiver.Balance += amount;
             var transaction = new GoldenCrown.Models.Transaction
             {
                 SenderId = toSender.UserId,

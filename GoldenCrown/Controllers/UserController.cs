@@ -26,7 +26,7 @@ namespace GoldenCrown.Controllers
             {
                 return Ok();
             }
-            return BadRequest("Не удалось зарегистрировать пользователя");
+            return BadRequest(new { Message = result.ErrorMessage });
 
         }
         [HttpPost("Login")]
@@ -37,11 +37,11 @@ namespace GoldenCrown.Controllers
                 return BadRequest(ModelState);
             }
             var result = await _userService.LoginAsync(request.Login, request.Password);
-            if (result )
+            if (result.IsSuccess)
             {
                 return Ok(new {Token = result.Value});
             }
-            return NotFound();
+            return Unauthorized(new { Message = result.ErrorMessage });
 
         } 
 

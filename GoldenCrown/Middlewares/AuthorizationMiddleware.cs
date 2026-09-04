@@ -31,9 +31,13 @@ namespace GoldenCrown.Middlewares
             }
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Token == token);
-            if(session == null || session.ExpiresAt < DateTime.UtcNow) {
-              context.Response.StatusCode= StatusCodes.Status401Unauthorized;
+            var session = await dbContext.Sessions
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Token == token);
+            if (session == null || session.ExpiresAt <= DateTimeOffset.UtcNow)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
             }
             context.Items[Constants.UserIdContextParameter] = session.UserId;
             await _next(context);

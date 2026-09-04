@@ -132,21 +132,21 @@ namespace GoldenCrown.Migrations
                             Id = 1,
                             Login = "testuser1",
                             Name = "Test User 1",
-                            PasswordHash = "seed-test-hash-1"
+                            PasswordHash = "AQAAAAIAAYagAAAAEJNvqd+NoFqelrNYynzWs+Eqa2zJ4J6GN+pAKRvspk38g4V3UTB1jHNdgO/EZUsP2Q=="
                         },
                         new
                         {
                             Id = 2,
                             Login = "testuser2",
                             Name = "Test User 2",
-                            PasswordHash = "seed-test-hash-2"
+                            PasswordHash = "AQAAAAIAAYagAAAAEInhvCnFwcUP+83KkhVErZskd9Wvyo/j3bnUILGdt7Ta2x3NPqD2wpACyH8IZ4E2SA=="
                         },
                         new
                         {
                             Id = 3,
                             Login = "testuser3",
                             Name = "Test User 3",
-                            PasswordHash = "seed-test-hash-3"
+                            PasswordHash = "AQAAAAIAAYagAAAAEGYzKMpM9Dtvit54wAx0NYpKHdvlqXggThin4CelAx2OWQxgpEPzNzfr7nQ+vbxuMA=="
                         });
                 });
 
