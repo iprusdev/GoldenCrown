@@ -91,7 +91,7 @@ namespace GoldenCrown.Services
                 SenderId = toSender.UserId,
                 ReceiverId = toReceiver.UserId,
                 Amount = amount,
-                Date = DateTime.Now
+                Date = DateTimeOffset.UtcNow
             };
             _context.Add(transaction);
             await _context.SaveChangesAsync();

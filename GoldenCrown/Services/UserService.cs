@@ -70,7 +70,7 @@ namespace GoldenCrown.Services
             {
                 UserId = existing.Id,
                 Token = token,
-                ExpiresAt = DateTime.UtcNow.AddHours(1)
+                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
             };
             _context.Sessions.Add(session);
             await _context.SaveChangesAsync();
