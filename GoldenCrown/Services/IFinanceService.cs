@@ -4,9 +4,9 @@ namespace GoldenCrown.Services
 {
     public interface IFinanceService
     {
-        Task<Result> DepositAsync(string token, decimal amount);
-        Task<Result<decimal>> GetBalanceAsync(string token);
-        Task<Result<IEnumerable<TransactionHistoryResponse>>> GetHistoryAsync(string token, DateTimeOffset? dateFrom, DateTimeOffset? dateTo, int skip, int take);
-        Task<Result> TransferAsync(string token, string receiverLogin, decimal amount);
+        Task<Result> DepositAsync(int userId, decimal amount);
+        Task<Result<decimal>> GetBalanceAsync(int userId);
+        Task<Result<IEnumerable<TransactionHistoryResponse>>> GetHistoryAsync(int userId, DateTimeOffset? dateFrom, DateTimeOffset? dateTo, int skip, int take);
+        Task<Result> TransferAsync(int fromUserId, string receiverLogin, decimal amount);
     }
 }

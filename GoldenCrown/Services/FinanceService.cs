@@ -15,48 +15,30 @@ namespace GoldenCrown.Services
             _context = context;
         }
 
-        public async Task<Result<decimal>> GetBalanceAsync(string token)
+        public async Task<Result<decimal>> GetBalanceAsync(int userId)
         {
-            var session = await _context.Sessions.FirstOrDefaultAsync(s => s.Token == token);
-            if (session == null)
-            {
-                return Result<decimal>.Failure("Session not found");
-            }
-            if (session.ExpiresAt <= DateTimeOffset.UtcNow)
-            {
-                return Result<decimal>.Failure("Session expired");
-            }
+
             var account = await _context.Accounts
-        .FirstOrDefaultAsync(a => session.UserId == a.UserId);
+        .FirstOrDefaultAsync(a => userId == a.UserId);
             if (account == null)
             {
                 return Result<decimal>.Failure("Account not found");
             }
             return Result<decimal>.Success(account.Balance);
         }
-        public async Task<Result> DepositAsync(string token, decimal amount)
+        public async Task<Result> DepositAsync(int userId, decimal amount)
         {
-            var session = await _context.Sessions.FirstOrDefaultAsync(s => s.Token == token);
-            if (session == null)
-            {
-                return Result.Failure("Session not found");
-            }
-            var user = await _context.Users.FirstOrDefaultAsync(a => a.Id == session.UserId);
+
+            var user = await _context.Users.FirstOrDefaultAsync(a => a.Id == userId);
             var account = await _context.Accounts.FirstOrDefaultAsync(b => b.UserId == user!.Id);
 
             account!.Balance += amount;
             await _context.SaveChangesAsync();
             return Result.Success();
         }
-        public async Task<Result> TransferAsync(string token, string receiverLogin, decimal amount)
+        public async Task<Result> TransferAsync(int fromUserId, string receiverLogin, decimal amount)
         {
-            var session =await _context.Sessions.FirstOrDefaultAsync(s=>s.Token == token);
-            if (session == null)
-            {
-                return Result.Failure("Session not found");
-            }
-            //
-            var fromSender = await _context.Users.FirstOrDefaultAsync(a => a.Id == session.UserId);
+            var fromSender = await _context.Users.FirstOrDefaultAsync(a => a.Id == fromUserId);
             var toSender = await _context.Accounts.FirstOrDefaultAsync(a => a.UserId == fromSender!.Id);
             //
             var userReceiver = await _context.Users.FirstOrDefaultAsync(a => a!.Login == receiverLogin);
@@ -85,104 +67,52 @@ namespace GoldenCrown.Services
             await _context.SaveChangesAsync();
             return Result.Success();
         }
-        public async Task<Result<IEnumerable<TransactionHistoryResponse>>> GetHistoryAsync(string token, DateTimeOffset? dateFrom, DateTimeOffset? dateTo, int skip, int take)
+        public async Task<Result<IEnumerable<TransactionHistoryResponse>>> GetHistoryAsync(int userId, DateTimeOffset? dateFrom, DateTimeOffset? dateTo, int skip, int take)
         {
-            //var session = await _context.Sessions.FirstOrDefaultAsync(s => s.Token == token);
-            //if (session == null) return Result<IEnumerable<TransactionHistoryResponce>>.Failure("User not found");
-
-            //var account = await _context.Accounts.FirstOrDefaultAsync(a => a.UserId == session!.UserId);
-
-            //var transactionsQuery = _context.Transactions
-            //    .Where(t => t.SenderId == account.Id || t.ReceiverId == account.Id)
-            //    .OrderByDescending(t => t.Date)
-            //    .AsQueryable();
-
-            //if (dateFrom != null)
-            //{
-            //    transactionsQuery = transactionsQuery.Where(t => t.Date >= dateFrom.Value);
-            //}
-
-            //if (dateTo != null)
-            //{
-            //    transactionsQuery = transactionsQuery.Where(t => t.Date <= dateTo.Value);
-            //}
-
-            //var transactions = await transactionsQuery
-            //    .Skip(skip)
-            //    .Take(take)
-            //    .ToListAsync();
-
-            //var result = transactions.Select(t => new TransactionHistoryResponce
-            //{ 
-            //    SenderId = t.SenderId,
-            //    ReceiverId = t.ReceiverId,
-            //    Date = t.Date,
-            //    Amount = t.Amount
-            //});
-
-            //return Result<IEnumerable<TransactionHistoryResponce>>.Success(result);
-
-            if (dateFrom != null && dateTo != null && dateFrom > dateTo)
+            if (dateFrom.HasValue && dateTo.HasValue && dateFrom > dateTo)
             {
-                return Result<List<TransactionHistoryResponse>>.Failure("Некорректный диапазон дат");
+                return Result<IEnumerable<TransactionHistoryResponse>>.Failure("Некорректный диапазон дат");
+            }
+            if (skip < 0)
+            {
+                return Result<IEnumerable<TransactionHistoryResponse>>.Failure("Offset не может быть отрицательным");
+            }
+            if (take <= 0)
+            {
+                return Result<IEnumerable<TransactionHistoryResponse>>.Failure("Limit должен быть больше нуля");
             }
 
-            var session = await _context.Sessions.FirstOrDefaultAsync(s => s.Token == token);
-            if (session == null)
+
+            var transactions = _context.Transactions
+                .AsNoTracking()
+                .Where(transaction =>
+                    transaction.SenderId == userId ||
+                    transaction.ReceiverId == userId);
+
+            if (dateFrom.HasValue)
             {
-                return Result<List<TransactionHistoryResponse>>.Failure("Пользователь не авторизован");
+                transactions = transactions.Where(transaction => transaction.Date >= dateFrom.Value);
+            }
+            if (dateTo.HasValue)
+            {
+                transactions = transactions.Where(transaction => transaction.Date <= dateTo.Value);
             }
 
-            var account = await _context.Accounts.FirstOrDefaultAsync(a => a.UserId == session.UserId);
-
-
-            var transactions = _context.Transactions.Where(x => x.SenderId == account!.Id || x.ReceiverId == account.Id);
-
-            if (dateFrom != null)
-            {
-                transactions = transactions.Where(x => x.Date >= dateFrom.Value);
-            }
-            if (dateTo != null)
-            {
-                transactions = transactions.Where(x => x.Date <= dateTo.Value);
-            }
-            transactions = transactions.Skip(skip).Take(take);
-
-            var dbTransactions = await transactions.ToListAsync();
-
-            var result = new List<TransactionHistoryResponse>();
-            var allSenders = transactions.Select(x => x.SenderId);
-            var allReceivers = transactions.Select(x => x.ReceiverId);
-            var allAccounts = allSenders.ToHashSet();
-            foreach (var receiver in allReceivers)
-            {
-                allAccounts.Add(receiver);
-            }
-
-            var names = await _context.Accounts.Where(x => allAccounts.Contains(x.Id))
-                .Join(_context.Users,
-                acc => acc.UserId,
-                u => u.Id,
-                (acc, u) => new
+            var result = await transactions
+                .OrderByDescending(transaction => transaction.Date)
+                .ThenByDescending(transaction => transaction.Id)
+                .Skip(skip)
+                .Take(take)
+                .Select(transaction => new TransactionHistoryResponse
                 {
-                    Name = u.Name,
-                    AccId = acc.Id,
-                }).ToDictionaryAsync(x => x.AccId);
-
-            foreach (var transaction in transactions)
-            {
-                var senderName = names[transaction.SenderId].Name;
-                var receiverName = names[transaction.ReceiverId].Name;
-                result.Add(new TransactionHistoryResponse
-                {
-                    SenderName = senderName,
-                    ReceiverName = receiverName,
+                    SenderName = transaction.Sender == null ? null : transaction.Sender.Name,
+                    ReceiverName = transaction.Receiver.Name,
                     Amount = transaction.Amount,
                     Date = transaction.Date
-                });
-            }
+                })
+                .ToListAsync();
 
-            return result;
+            return Result<IEnumerable<TransactionHistoryResponse>>.Success(result);
         }
     }
 }

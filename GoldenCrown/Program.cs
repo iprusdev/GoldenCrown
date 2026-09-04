@@ -1,6 +1,7 @@
 using GoldenCrown.Data;
 using GoldenCrown.Services;
 using Microsoft.EntityFrameworkCore;
+using GoldenCrown.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,7 +19,31 @@ builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.AddSecurityDefinition("ApiKey", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Please enter a api token",
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey
+    });
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "ApiKey"
+                }
+            },
+            new string[] {}
+        } });
+});
+
+ 
 
 var app = builder.Build();
     
@@ -30,8 +55,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseRouting();
 
-app.UseAuthorization();
+app.UseMiddleware<AuthorizationMiddleware>();
 
 app.MapControllers();
 

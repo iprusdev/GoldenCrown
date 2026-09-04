@@ -5,8 +5,7 @@ namespace GoldenCrown.DTOs.Finance
     public class TransferRequest
     {
 
-        [Required(ErrorMessage = "Поле Token обязательно")]
-        public string Token {  get; set; }
+
 
         [Required(ErrorMessage = "Поле ReceiverLogin обязательно")]
         public string ReceiverLogin { get; set; }
