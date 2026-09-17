@@ -17,7 +17,7 @@ namespace GoldenCrown.Controllers
             _financeService = financeService;
         }
 
-        [HttpGet]
+        [HttpGet("balance")]
         public async Task<IActionResult> GetBalanceAsync()
         {
             var balanceResult = await _financeService.GetBalanceAsync(GetUserid());
