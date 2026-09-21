@@ -1,6 +1,9 @@
-﻿using GoldenCrown.DTOs.User;
-using GoldenCrown.Services;
-using Microsoft.AspNetCore.Http.HttpResults;
+using FluentValidation;
+using GoldenCrown.DTOs.User;
+using GoldenCrown.Features.User.UserLogin;
+using GoldenCrown.Features.User.UserRegister;
+using MediatR;
+
 using Microsoft.AspNetCore.Mvc;
 
 namespace GoldenCrown.Controllers
@@ -9,19 +12,20 @@ namespace GoldenCrown.Controllers
     [Route("api/user")]
     public class UserController : ControllerBase
     {
-        private readonly IUserService _userService;
-        public UserController(IUserService userService)
+        private readonly ISender _sender;
+        public UserController(ISender sender)
         {
-            _userService = userService;
+            _sender = sender;
         }
         [HttpPost("Register")]
-        public async Task<IActionResult> Register(RegisterRequest request)
+        public async Task<IActionResult> Register(RegisterRequest request, [FromServices]IValidator<RegisterRequest> validator, CancellationToken cancellationToken)
         {
-            if (!ModelState.IsValid)
+            var validationResult = await validator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
             {
-                return BadRequest(ModelState);
+                return BadRequest(validationResult.ToDictionary());
             }
-            var result = await _userService.RegisterAsync(request.Login, request.Name, request.Password);
+            var result = await _sender.Send(new UserRegisterCommand(request.Login, request.Name, request.Password), cancellationToken);
             if (result)
             {
                 return Ok();
@@ -30,13 +34,14 @@ namespace GoldenCrown.Controllers
 
         }
         [HttpPost("Login")]
-        public async Task<IActionResult> Login(LoginRequest request)
+        public async Task<IActionResult> Login(LoginRequest request, [FromServices] IValidator<LoginRequest> validator, CancellationToken cancellationToken)
         {
-            if (!ModelState.IsValid)
+            var validationResult = await validator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
             {
-                return BadRequest(ModelState);
+                return BadRequest(validationResult.ToDictionary());
             }
-            var result = await _userService.LoginAsync(request.Login, request.Password);
+            var result = await _sender.Send(new UserLoginCommand(request.Login, request.Password), cancellationToken);
             if (result.IsSuccess)
             {
                 return Ok(new {Token = result.Value});

@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using GoldenCrown.Middlewares;
 using GoldenCrown.Models;
 using Microsoft.AspNetCore.Identity;
+using FluentValidation;
+using GoldenCrown.DTOs.User;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,12 +17,13 @@ var connectionString = builder.Configuration
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
+builder.Services.AddMediatR(cfg => {
+    cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
+});
 builder.Services.AddControllers();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IAccountService, AccountService>();
-builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddHostedService<SessionCleanupService>();
+builder.Services.AddValidatorsFromAssemblyContaining<LoginRequest>();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

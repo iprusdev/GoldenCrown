@@ -23,6 +23,39 @@ Passwords are hashed with ASP.NET Core's `PasswordHasher<TUser>`. Passwords stor
 - SQL Server
 - Swagger / OpenAPI
 
+## CQRS architecture
+
+Controllers send requests through MediatR. Each operation in `GoldenCrown/Features`
+has its own request and handler. Handlers contain the business rules and use
+`ApplicationDbContext` directly; the former user, account and finance services and
+their interfaces have been removed.
+
+| Type | Requests |
+| --- | --- |
+| Commands (write) | `UserRegisterCommand`, `UserLoginCommand`, `CreateAccountCommand`, `DepositCommand`, `TransferCommand`, `CleanupExpiredSessionsCommand` |
+| Queries (read) | `GetBalanceQuery`, `GetTransactionHistoryQuery` |
+
+Login is a command because it creates or updates a session and can upgrade a
+password hash. Both queries use `AsNoTracking()` and never save changes.
+Registration saves the user and zero-balance account together in one
+`SaveChangesAsync` call. `SessionCleanupService` remains a background scheduler
+and dispatches its cleanup command through MediatR.
+
+HTTP routes and DTOs are preserved. Controllers validate incoming DTOs, while
+handlers enforce business rules and propagate cancellation to EF Core.
+Commands and queries share the existing SQL Server database.
+
+### Tests
+
+```powershell
+dotnet test GoldenCrown.slnx
+```
+
+`GoldenCrown.Tests` exercises all eight operations through MediatR, including
+rejected transfers, token rotation, read-only queries and cancellation.
+Tests use EF Core InMemory; SQL Server constraints, transaction rollback and
+concurrent requests require separate integration testing.
+
 ## Startup instructions
 
 ### Prerequisites

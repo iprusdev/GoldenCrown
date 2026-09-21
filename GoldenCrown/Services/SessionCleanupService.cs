@@ -1,5 +1,5 @@
-using GoldenCrown.Data;
-using Microsoft.EntityFrameworkCore;
+using GoldenCrown.Features.Session.CleanupExpiredSessions;
+using MediatR;
 
 namespace GoldenCrown.Services
 {
@@ -23,19 +23,12 @@ namespace GoldenCrown.Services
             while (!stoppingToken.IsCancellationRequested)
             {
                 using var scope = _scopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider
-                    .GetRequiredService<ApplicationDbContext>();
-
-                var expiredSessions = await dbContext.Sessions
-                    .Where(session => session.ExpiresAt <= DateTimeOffset.UtcNow)
-                    .ToListAsync(stoppingToken);
-
-                dbContext.Sessions.RemoveRange(expiredSessions);
-                await dbContext.SaveChangesAsync(stoppingToken);
-
+                var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+                var deletedSessionCount = await sender.Send(
+                    new CleanupExpiredSessionsCommand(), stoppingToken);
                 _logger.LogInformation(
                     "Deleted {DeletedSessionCount} expired sessions.",
-                    expiredSessions.Count);
+                    deletedSessionCount);
 
                 await Task.Delay(CleanupInterval, stoppingToken);
             }

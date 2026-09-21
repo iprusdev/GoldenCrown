@@ -1,31 +1,36 @@
-﻿using GoldenCrown.Attributes;
+using FluentValidation;
+using GoldenCrown.Attributes;
 using GoldenCrown.DTOs.Finance;
-using GoldenCrown.Services;
+using GoldenCrown.Features.Finance.Deposit;
+using GoldenCrown.Features.Finance.Transfer;
+using GoldenCrown.Features.Finance.GetBalance;
+using GoldenCrown.Features.Finance.GetTransactionHistory;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GoldenCrown.Controllers
 {
-    
+
     [Route("api/[controller]")]
     [ApiController]
     [MyAuthorize]
     public class FinanceController : Controller
     {
-        private IFinanceService _financeService;
-        public FinanceController (IFinanceService financeService)
+        private readonly ISender _sender;
+        public FinanceController (ISender sender)
         {
-            _financeService = financeService;
+            _sender = sender;
         }
 
         [HttpGet("balance")]
-        public async Task<IActionResult> GetBalanceAsync()
+        public async Task<IActionResult> GetBalanceAsync(CancellationToken cancellationToken)
         {
-            var balanceResult = await _financeService.GetBalanceAsync(GetUserid());
+            var balanceResult = await _sender.Send(new GetBalanceQuery(GetUserid()), cancellationToken);
             if (!balanceResult.IsSuccess)
-            { 
+            {
                 return BadRequest(new
                 {
-                    Message = "Session not found"
+                    Message = balanceResult.ErrorMessage
                 });
 
             }
@@ -35,16 +40,26 @@ namespace GoldenCrown.Controllers
             });
         }
         [HttpPost("deposit")]
-        public async Task<IActionResult> DepositAsync([FromBody] DepositRequest request) {
-            var depositResult = await _financeService.DepositAsync(GetUserid(), request.Amount);
+        public async Task<IActionResult> DepositAsync([FromBody] DepositRequest request, [FromServices] IValidator<DepositRequest> validator, CancellationToken cancellationToken) {
+            var validationResult = await validator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                return BadRequest(validationResult.ToDictionary());
+            }
+            var depositResult = await _sender.Send(new DepositCommand(GetUserid(), request.Amount), cancellationToken);
             if (depositResult.IsSuccess) {
                 return Ok();
             }
             return BadRequest(new { depositResult.ErrorMessage });
         }
         [HttpPost("transfer")]
-        public async Task<IActionResult> TransferAsync([FromBody] TransferRequest request) {
-            var transferResult = await _financeService.TransferAsync(GetUserid(), request.ReceiverLogin, request.Amount);
+        public async Task<IActionResult> TransferAsync([FromBody] TransferRequest request, [FromServices] IValidator<TransferRequest> validator, CancellationToken cancellationToken) {
+            var validationResult = await validator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                return BadRequest(validationResult.ToDictionary());
+            }
+            var transferResult = await _sender.Send(new TransferCommand(GetUserid(), request.ReceiverLogin, request.Amount), cancellationToken);
             if (transferResult.IsSuccess) {
                 return Ok();
             }
@@ -52,9 +67,15 @@ namespace GoldenCrown.Controllers
         }
 
         [HttpGet("history")]
-        public async Task<IActionResult> GetTransactionHistoryAsync([FromQuery] TransactionHistoryRequest request)
+        public async Task<IActionResult> GetTransactionHistoryAsync([FromQuery] TransactionHistoryRequest request, [FromServices] IValidator<TransactionHistoryRequest> validator, CancellationToken cancellationToken)
+
         {
-            var historyResult = await _financeService.GetHistoryAsync(GetUserid(), request.From, request.To, request.Offset, request.Limit);
+            var validationResult = await validator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                return BadRequest(validationResult.ToDictionary());
+            }
+            var historyResult = await _sender.Send(new GetTransactionHistoryQuery(GetUserid(), request.From, request.To, request.Offset, request.Limit), cancellationToken);
             if (historyResult.IsSuccess)
             {
                 return Ok(historyResult.Value);
