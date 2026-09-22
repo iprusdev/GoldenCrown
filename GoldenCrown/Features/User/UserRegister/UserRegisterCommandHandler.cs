@@ -21,11 +21,13 @@ public sealed class UserRegisterCommandHandler(ApplicationDbContext context, IPa
         {
             Login = request.Login,
             Name = request.Name,
-            Account = new AccountModel { Balance = 0 }
+            Accounts = Enum.GetValues<GoldenCrown.Models.Currency>()
+                .Select(currency => new AccountModel { Currency = currency, Balance = 0 })
+                .ToList()
         };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
-        // Persist the user and account together so registration cannot leave an orphan user.
+        // Persist the user and all three accounts together so registration cannot leave an orphan user.
         context.Users.Add(user);
         await context.SaveChangesAsync(cancellationToken);
         return Result.Success();

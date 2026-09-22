@@ -1,4 +1,4 @@
-﻿namespace GoldenCrown.Models
+namespace GoldenCrown.Models
 {
     public class User
     {
@@ -7,7 +7,7 @@
         public string Name { get; set; } = string.Empty;
         public string PasswordHash { get; set; } = string.Empty;
 
-        public Account Account { get; set; } = null!;
+        public ICollection<Account> Accounts { get; set; } = new List<Account>();
         public Session? Session { get; set; }
         
         public ICollection<Transaction> SentTransactions { get; set; }

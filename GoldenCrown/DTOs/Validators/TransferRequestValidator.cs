@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using GoldenCrown.DTOs.Finance;
 
 namespace GoldenCrown.DTOs.Validators
@@ -7,6 +7,8 @@ namespace GoldenCrown.DTOs.Validators
     {
         public TransferRequestValidator()
         {
+            RuleFor(x => x.Currency).IsInEnum().WithMessage("Укажите валюту USD, EUR или BYN");
+
             RuleFor(x => x.ReceiverLogin)
                 .NotEmpty().WithMessage("Поле логин получателя обязательно")
                 .MinimumLength(3).WithMessage("Минимальная длина логина получателя 3 символа")

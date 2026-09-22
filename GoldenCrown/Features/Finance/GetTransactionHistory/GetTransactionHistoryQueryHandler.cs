@@ -10,6 +10,9 @@ public sealed class GetTransactionHistoryQueryHandler(ApplicationDbContext conte
 {
     public async Task<Result<IEnumerable<TransactionHistoryResponse>>> Handle(GetTransactionHistoryQuery request, CancellationToken cancellationToken)
     {
+        if (request.Currency.HasValue && !Enum.IsDefined(request.Currency.Value))
+            return Result<IEnumerable<TransactionHistoryResponse>>.Failure("Укажите валюту USD, EUR или BYN");
+
         if (request.From.HasValue && request.To.HasValue && request.From > request.To)
         {
             return Result<IEnumerable<TransactionHistoryResponse>>.Failure("Некорректный диапазон дат");
@@ -39,6 +42,9 @@ public sealed class GetTransactionHistoryQueryHandler(ApplicationDbContext conte
             transactions = transactions.Where(transaction => transaction.Date <= request.To.Value);
         }
 
+        if (request.Currency.HasValue)
+            transactions = transactions.Where(transaction => transaction.Currency == request.Currency.Value);
+
         var result = await transactions
             .OrderByDescending(transaction => transaction.Date)
             .ThenByDescending(transaction => transaction.Id)
@@ -48,7 +54,7 @@ public sealed class GetTransactionHistoryQueryHandler(ApplicationDbContext conte
             {
                 SenderName = transaction.Sender == null ? null : transaction.Sender.Name,
                 ReceiverName = transaction.Receiver.Name,
-                Amount = transaction.Amount,
+                Amount = transaction.Amount, Currency = transaction.Currency,
                 Date = transaction.Date
             })
             .ToListAsync(cancellationToken);

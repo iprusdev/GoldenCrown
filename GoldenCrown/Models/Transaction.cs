@@ -1,4 +1,4 @@
-﻿namespace GoldenCrown.Models
+namespace GoldenCrown.Models
 {
     public class Transaction
     {
@@ -6,6 +6,7 @@
         public int? SenderId { get; set; }
         public int ReceiverId { get; set; }
         public DateTimeOffset Date { get; set; }
+        public Currency Currency { get; set; }
         public decimal Amount { get; set; }
 
         public User? Sender { get; set; }

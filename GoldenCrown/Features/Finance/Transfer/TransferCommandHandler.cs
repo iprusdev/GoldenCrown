@@ -9,6 +9,11 @@ public sealed class TransferCommandHandler(ApplicationDbContext context)
 {
     public async Task<Result> Handle(TransferCommand request, CancellationToken cancellationToken)
     {
+        if (!Enum.IsDefined(request.Currency))
+        {
+            return Result.Failure("Укажите валюту USD, EUR или BYN");
+        }
+
         if (request.Amount <= 0)
         {
             return Result.Failure("Сумма должна быть больше нуля");
@@ -20,7 +25,7 @@ public sealed class TransferCommandHandler(ApplicationDbContext context)
             return Result.Failure("Отправитель не найден");
         }
 
-        var senderAccount = await context.Accounts.FirstOrDefaultAsync(a => a.UserId == sender.Id, cancellationToken);
+        var senderAccount = await context.Accounts.FirstOrDefaultAsync(a => a.UserId == sender.Id && a.Currency == request.Currency, cancellationToken);
         if (senderAccount == null)
         {
             return Result.Failure("Счёт отправителя не найден");
@@ -37,7 +42,7 @@ public sealed class TransferCommandHandler(ApplicationDbContext context)
             return Result.Failure("Нельзя перевести средства самому себе");
         }
 
-        var receiverAccount = await context.Accounts.FirstOrDefaultAsync(a => a.UserId == receiver.Id, cancellationToken);
+        var receiverAccount = await context.Accounts.FirstOrDefaultAsync(a => a.UserId == receiver.Id && a.Currency == request.Currency, cancellationToken);
         if (receiverAccount == null)
         {
             return Result.Failure("Счёт получателя не найден");
@@ -54,7 +59,7 @@ public sealed class TransferCommandHandler(ApplicationDbContext context)
         {
             SenderId = senderAccount.UserId,
             ReceiverId = receiverAccount.UserId,
-            Amount = request.Amount,
+            Amount = request.Amount, Currency = request.Currency,
             Date = DateTimeOffset.UtcNow
         };
         context.Add(transaction);

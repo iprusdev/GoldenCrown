@@ -6,7 +6,7 @@ GoldenCrown is an educational banking REST API built with ASP.NET Core and Entit
 
 - user registration and login;
 - token-based authentication with one active session per user;
-- account balance lookup;
+- three currency accounts per user (USD, EUR, BYN) with independent balances;
 - account deposits;
 - money transfers between users;
 - filtered and paginated transaction history;
@@ -33,15 +33,15 @@ their interfaces have been removed.
 | Type | Requests |
 | --- | --- |
 | Commands (write) | `UserRegisterCommand`, `UserLoginCommand`, `CreateAccountCommand`, `DepositCommand`, `TransferCommand`, `CleanupExpiredSessionsCommand` |
-| Queries (read) | `GetBalanceQuery`, `GetTransactionHistoryQuery` |
+| Queries (read) | `GetAccountsQuery`, `GetBalanceQuery`, `GetTransactionHistoryQuery` |
 
 Login is a command because it creates or updates a session and can upgrade a
-password hash. Both queries use `AsNoTracking()` and never save changes.
-Registration saves the user and zero-balance account together in one
+password hash. All queries use `AsNoTracking()` and never save changes.
+Registration saves the user and three zero-balance accounts together in one
 `SaveChangesAsync` call. `SessionCleanupService` remains a background scheduler
 and dispatches its cleanup command through MediatR.
 
-HTTP routes and DTOs are preserved. Controllers validate incoming DTOs, while
+Financial requests explicitly select a currency; existing routes remain available. Controllers validate incoming DTOs, while
 handlers enforce business rules and propagate cancellation to EF Core.
 Commands and queries share the existing SQL Server database.
 
@@ -51,10 +51,17 @@ Commands and queries share the existing SQL Server database.
 dotnet test GoldenCrown.slnx
 ```
 
-`GoldenCrown.Tests` exercises all eight operations through MediatR, including
+`GoldenCrown.Tests` exercises all nine operations through MediatR, including
 rejected transfers, token rotation, read-only queries and cancellation.
-Tests use EF Core InMemory; SQL Server constraints, transaction rollback and
-concurrent requests require separate integration testing.
+Handler tests use EF Core InMemory. To also test migration, constraints and rollback
+on a temporary SQL Server Express database:
+
+```powershell
+$env:GOLDENCROWN_SQL_TESTS = '1'
+dotnet test GoldenCrown.slnx
+```
+
+The integration test creates and deletes only its own GUID-named database.
 
 ## Startup instructions
 
@@ -181,12 +188,26 @@ Successful response (`200 OK`):
 
 Invalid input returns `400 Bad Request`; invalid credentials return `401 Unauthorized`.
 
+### Get all accounts
+
+`GET /api/Finance/accounts`
+
+Returns only the authenticated user's accounts:
+
+```json
+[
+  { "id": 1, "currency": "BYN", "balance": 0 },
+  { "id": 2, "currency": "USD", "balance": 100 },
+  { "id": 3, "currency": "EUR", "balance": 0 }
+]
+```
+
 ### Get the current balance
 
-`GET /api/Finance`
+`GET /api/Finance/balance?currency=USD`
 
 ```bash
-curl "http://localhost:5256/api/Finance" \
+curl "http://localhost:5256/api/Finance/balance?currency=USD" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -194,6 +215,7 @@ Successful response (`200 OK`):
 
 ```json
 {
+  "currency": "USD",
   "balance": 1250.50
 }
 ```
@@ -207,11 +229,12 @@ curl -X POST "http://localhost:5256/api/Finance/deposit" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
+    "currency": "USD",
     "amount": 500.00
   }'
 ```
 
-`amount` must be greater than zero. A successful request returns `200 OK` with an empty body.
+`currency` is required and must be `USD`, `EUR` or `BYN`; `amount` must be greater than zero. A successful request returns `200 OK` with an empty body.
 
 ### Transfer money
 
@@ -223,11 +246,12 @@ curl -X POST "http://localhost:5256/api/Finance/transfer" \
   -H "Content-Type: application/json" \
   -d '{
     "receiverLogin": "alice123",
+    "currency": "USD",
     "amount": 100.00
   }'
 ```
 
-`receiverLogin` is required and `amount` must be greater than zero. A successful request returns `200 OK`. The API returns `400 Bad Request` when the receiver does not exist, the sender has insufficient funds, or the sender tries to transfer money to the same account.
+Both accounts use the specified `currency`; currency conversion is not supported. `receiverLogin` is required; `currency` must be `USD`, `EUR` or `BYN`; `amount` must be greater than zero. A successful request returns `200 OK`. The API returns `400 Bad Request` when the receiver does not exist, the sender has insufficient funds, or the sender tries to transfer money to the same account.
 
 ### Get transaction history
 
@@ -242,6 +266,7 @@ Query parameters:
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| `currency` | USD / EUR / BYN | No | Filter by currency; omitted means all currencies. |
 | `from` | ISO 8601 date-time | No | Include transactions on or after this time. |
 | `to` | ISO 8601 date-time | No | Include transactions on or before this time. |
 | `offset` | integer | Yes | Number of records to skip; must be at least `0`. |
@@ -254,6 +279,7 @@ Successful response (`200 OK`):
   {
     "senderName": "John Smith",
     "receiverName": "Alice Brown",
+    "currency": "USD",
     "amount": 100.00,
     "date": "2026-09-04T12:30:00+03:00"
   }
@@ -261,6 +287,15 @@ Successful response (`200 OK`):
 ```
 
 Results are ordered from newest to oldest. An invalid date range, negative offset, or non-positive limit returns `400 Bad Request`.
+
+## Existing data migration
+
+`MultiCurrencyAccounts` treats existing balances and transaction history as BYN.
+It creates missing USD, EUR and BYN accounts with zero balances and preserves
+existing money without conversion. The application applies pending migrations
+at startup; alternatively run `dotnet ef database update --project GoldenCrown`.
+Rollback is blocked while any USD/EUR balance is nonzero or USD/EUR history exists,
+so reverting cannot silently discard money or reinterpret another currency.
 
 ## Database structure
 
@@ -278,10 +313,11 @@ Results are ordered from newest to oldest. An invalid date range, negative offse
 | Column | SQL type | Constraints |
 | --- | --- | --- |
 | `Id` | `int` | Primary key, identity |
-| `UserId` | `int` | Required, unique, foreign key to `Users.Id` |
+| `UserId` | `int` | Required, foreign key to `Users.Id` |
+| `Currency` | `nvarchar(3)` | Required; USD, EUR or BYN; unique together with UserId |
 | `Balance` | `decimal(18,2)` | Required |
 
-Each user has one account. Deleting a user also deletes the related account.
+Registration creates exactly three accounts per user, one per supported currency. Deleting a user also deletes the related accounts.
 
 ### `Sessions`
 
@@ -301,6 +337,7 @@ Using `UserId` as the primary key enforces one active session per user. Deleting
 | `SenderId` | `int` | Nullable foreign key to `Users.Id` |
 | `ReceiverId` | `int` | Required foreign key to `Users.Id` |
 | `Date` | `datetimeoffset` | Required |
+| `Currency` | `nvarchar(3)` | Required; USD, EUR or BYN |
 | `Amount` | `decimal(18,2)` | Required |
 
 `SenderId` and `ReceiverId` use restricted delete behavior so users referenced by transactions cannot be deleted automatically.
@@ -308,7 +345,7 @@ Using `UserId` as the primary key enforces one active session per user. Deleting
 ### Relationships
 
 ```text
-Users 1 ─── 1 Accounts
+Users 1 ─── many Accounts (unique UserId + Currency)
 Users 1 ─── 0..1 Sessions
 Users 1 ─── many Transactions (SenderId)
 Users 1 ─── many Transactions (ReceiverId)
@@ -324,4 +361,4 @@ The `SeedData` migration creates these users:
 | 2 | `testuser2` | Test User 2 | `seed-test-hash-2` |
 | 3 | `testuser3` | Test User 3 | `seed-test-hash-3` |
 
-The migration seeds only user rows; it does not create accounts for these users.
+The MultiCurrencyAccounts migration also creates USD, EUR and BYN accounts for all seeded users.

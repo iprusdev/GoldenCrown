@@ -39,15 +39,18 @@ public sealed class CqrsTests : IDisposable
     private async Task<User> Register(string login)
     {
         Assert.True((await sender.Send(new UserRegisterCommand(login, login, "password123"))).IsSuccess);
-        return await db.Users.Include(user => user.Account).SingleAsync(user => user.Login == login);
+        return await db.Users.Include(user => user.Accounts).SingleAsync(user => user.Login == login);
     }
 
     [Fact]
     public async Task RegistrationCreatesUserWithZeroBalanceAndHashedPassword()
     {
         var user = await Register("alice");
-        Assert.Equal(0m, user.Account.Balance);
-        Assert.Equal(user.Id, user.Account.UserId);
+        Assert.Equal(0m, user.Accounts.Single(a => a.Currency == Currency.BYN).Balance);
+        Assert.Equal(user.Id, user.Accounts.Single(a => a.Currency == Currency.BYN).UserId);
+        Assert.Equal(3, user.Accounts.Count);
+        Assert.Equal(Enum.GetValues<Currency>().OrderBy(c => c), user.Accounts.Select(a => a.Currency).OrderBy(c => c));
+        Assert.All(user.Accounts, account => Assert.Equal(0m, account.Balance));
         Assert.NotEqual("password123", user.PasswordHash);
         Assert.NotEqual(PasswordVerificationResult.Failed,
             new PasswordHasher<User>().VerifyHashedPassword(user, user.PasswordHash, "password123"));
@@ -60,7 +63,7 @@ public sealed class CqrsTests : IDisposable
         var result = await sender.Send(new UserRegisterCommand("alice", "Other", "password456"));
         Assert.False(result.IsSuccess);
         Assert.Equal(1, await db.Users.CountAsync());
-        Assert.Equal(1, await db.Accounts.CountAsync());
+        Assert.Equal(3, await db.Accounts.CountAsync());
     }
 
     [Fact]
@@ -104,16 +107,16 @@ public sealed class CqrsTests : IDisposable
         var user = new User { Login = "alice", Name = "Alice" };
         db.Users.Add(user);
         await db.SaveChangesAsync();
-        await sender.Send(new CreateAccountCommand("alice"));
-        Assert.Equal(0m, (await db.Accounts.SingleAsync()).Balance);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => sender.Send(new CreateAccountCommand("alice")));
+        await sender.Send(new CreateAccountCommand("alice", Currency.BYN));
+        Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.Currency == Currency.BYN)).Balance);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sender.Send(new CreateAccountCommand("alice", Currency.BYN)));
         Assert.Equal(1, await db.Accounts.CountAsync());
     }
 
     [Fact]
     public async Task CreateAccountRejectsMissingUser()
     {
-        await Assert.ThrowsAsync<InvalidOperationException>(() => sender.Send(new CreateAccountCommand("missing")));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sender.Send(new CreateAccountCommand("missing", Currency.BYN)));
         Assert.Empty(await db.Accounts.ToListAsync());
     }
 
@@ -121,9 +124,9 @@ public sealed class CqrsTests : IDisposable
     public async Task DepositPersistsBalance()
     {
         var user = await Register("alice");
-        Assert.True((await sender.Send(new DepositCommand(user.Id, 100m))).IsSuccess);
+        Assert.True((await sender.Send(new DepositCommand(user.Id, 100m, Currency.BYN))).IsSuccess);
         db.ChangeTracker.Clear();
-        Assert.Equal(100m, (await db.Accounts.SingleAsync()).Balance);
+        Assert.Equal(100m, (await db.Accounts.SingleAsync(a => a.Currency == Currency.BYN)).Balance);
     }
 
     [Theory]
@@ -132,8 +135,8 @@ public sealed class CqrsTests : IDisposable
     public async Task NonPositiveDepositDoesNotChangeBalance(decimal amount)
     {
         var user = await Register("alice");
-        Assert.False((await sender.Send(new DepositCommand(user.Id, amount))).IsSuccess);
-        Assert.Equal(0m, (await db.Accounts.SingleAsync()).Balance);
+        Assert.False((await sender.Send(new DepositCommand(user.Id, amount, Currency.BYN))).IsSuccess);
+        Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.Currency == Currency.BYN)).Balance);
     }
 
     [Fact]
@@ -141,11 +144,11 @@ public sealed class CqrsTests : IDisposable
     {
         var alice = await Register("alice");
         var bob = await Register("bob");
-        await sender.Send(new DepositCommand(alice.Id, 100m));
-        Assert.True((await sender.Send(new TransferCommand(alice.Id, "bob", 30m))).IsSuccess);
+        await sender.Send(new DepositCommand(alice.Id, 100m, Currency.BYN));
+        Assert.True((await sender.Send(new TransferCommand(alice.Id, "bob", 30m, Currency.BYN))).IsSuccess);
         db.ChangeTracker.Clear();
-        Assert.Equal(70m, (await db.Accounts.SingleAsync(a => a.UserId == alice.Id)).Balance);
-        Assert.Equal(30m, (await db.Accounts.SingleAsync(a => a.UserId == bob.Id)).Balance);
+        Assert.Equal(70m, (await db.Accounts.SingleAsync(a => a.UserId == alice.Id && a.Currency == Currency.BYN)).Balance);
+        Assert.Equal(30m, (await db.Accounts.SingleAsync(a => a.UserId == bob.Id && a.Currency == Currency.BYN)).Balance);
         var transaction = await db.Transactions.SingleAsync();
         Assert.Equal(alice.Id, transaction.SenderId);
         Assert.Equal(bob.Id, transaction.ReceiverId);
@@ -161,10 +164,10 @@ public sealed class CqrsTests : IDisposable
     {
         var alice = await Register("alice");
         await Register("bob");
-        await sender.Send(new DepositCommand(alice.Id, 100m));
-        Assert.False((await sender.Send(new TransferCommand(alice.Id, receiver, amount))).IsSuccess);
-        Assert.Equal(100m, alice.Account.Balance);
-        Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.UserId != alice.Id)).Balance);
+        await sender.Send(new DepositCommand(alice.Id, 100m, Currency.BYN));
+        Assert.False((await sender.Send(new TransferCommand(alice.Id, receiver, amount, Currency.BYN))).IsSuccess);
+        Assert.Equal(100m, alice.Accounts.Single(a => a.Currency == Currency.BYN).Balance);
+        Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.UserId != alice.Id && a.Currency == Currency.BYN)).Balance);
         Assert.Empty(await db.Transactions.ToListAsync());
     }
 
@@ -172,13 +175,13 @@ public sealed class CqrsTests : IDisposable
     public async Task BalanceQueryDoesNotTrackEntities()
     {
         var user = await Register("alice");
-        await sender.Send(new DepositCommand(user.Id, 12m));
+        await sender.Send(new DepositCommand(user.Id, 12m, Currency.BYN));
         db.ChangeTracker.Clear();
-        var balance = await sender.Send(new GetBalanceQuery(user.Id));
+        var balance = await sender.Send(new GetBalanceQuery(user.Id, Currency.BYN));
         Assert.True(balance.IsSuccess);
         Assert.Equal(12m, balance.Value);
         Assert.Empty(db.ChangeTracker.Entries());
-        Assert.False((await sender.Send(new GetBalanceQuery(-1))).IsSuccess);
+        Assert.False((await sender.Send(new GetBalanceQuery(-1, Currency.BYN))).IsSuccess);
     }
 
     [Fact]
@@ -189,10 +192,10 @@ public sealed class CqrsTests : IDisposable
         var carol = await Register("carol");
         var date = DateTimeOffset.UtcNow;
         db.Transactions.AddRange(
-            new Transaction { SenderId = alice.Id, ReceiverId = bob.Id, Amount = 1, Date = date.AddDays(-2) },
-            new Transaction { SenderId = bob.Id, ReceiverId = alice.Id, Amount = 2, Date = date },
-            new Transaction { SenderId = alice.Id, ReceiverId = bob.Id, Amount = 3, Date = date },
-            new Transaction { SenderId = bob.Id, ReceiverId = carol.Id, Amount = 4, Date = date });
+            new Transaction { Currency = Currency.BYN, SenderId = alice.Id, ReceiverId = bob.Id, Amount = 1, Date = date.AddDays(-2) },
+            new Transaction { Currency = Currency.BYN, SenderId = bob.Id, ReceiverId = alice.Id, Amount = 2, Date = date },
+            new Transaction { Currency = Currency.BYN, SenderId = alice.Id, ReceiverId = bob.Id, Amount = 3, Date = date },
+            new Transaction { Currency = Currency.BYN, SenderId = bob.Id, ReceiverId = carol.Id, Amount = 4, Date = date });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var history = await sender.Send(new GetTransactionHistoryQuery(alice.Id, date, date, 1, 1));
@@ -236,6 +239,81 @@ public sealed class CqrsTests : IDisposable
         Assert.Empty(await db.Users.ToListAsync());
     }
 
+    [Theory]
+    [InlineData(Currency.USD)]
+    [InlineData(Currency.EUR)]
+    [InlineData(Currency.BYN)]
+    public async Task OperationsOnlyAffectSelectedCurrency(Currency currency)
+    {
+        var alice = await Register("alice");
+        var bob = await Register("bob");
+        Assert.True((await sender.Send(new DepositCommand(alice.Id, 100m, currency))).IsSuccess);
+        Assert.True((await sender.Send(new TransferCommand(alice.Id, "bob", 25m, currency))).IsSuccess);
+        db.ChangeTracker.Clear();
+        var accounts = await sender.Send(new GoldenCrown.Features.Finance.GetAccounts.GetAccountsQuery(alice.Id));
+        Assert.Equal(3, accounts.Count);
+        Assert.Equal(75m, accounts.Single(a => a.Currency == currency).Balance);
+        Assert.All(accounts.Where(a => a.Currency != currency), a => Assert.Equal(0m, a.Balance));
+        Assert.Equal(25m, (await sender.Send(new GetBalanceQuery(bob.Id, currency))).Value);
+        var history = await sender.Send(new GetTransactionHistoryQuery(alice.Id, null, null, 0, 10, currency));
+        Assert.Equal(currency, Assert.Single(history.Value).Currency);
+        Assert.Empty((await sender.Send(new GetTransactionHistoryQuery(
+            alice.Id, null, null, 0, 10, currency == Currency.USD ? Currency.EUR : Currency.USD))).Value);
+        Assert.Empty(db.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task FundsInAnotherCurrencyCannotPayForTransfer()
+    {
+        var alice = await Register("alice");
+        await Register("bob");
+        await sender.Send(new DepositCommand(alice.Id, 100m, Currency.USD));
+        Assert.False((await sender.Send(new TransferCommand(alice.Id, "bob", 10m, Currency.EUR))).IsSuccess);
+        Assert.Equal(100m, (await sender.Send(new GetBalanceQuery(alice.Id, Currency.USD))).Value);
+        Assert.Empty(await db.Transactions.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(999)]
+    public async Task InvalidCurrencyIsRejectedEverywhere(int value)
+    {
+        var currency = (Currency)value;
+        var alice = await Register("alice");
+        Assert.False((await sender.Send(new DepositCommand(alice.Id, 100m, currency))).IsSuccess);
+        Assert.False((await sender.Send(new TransferCommand(alice.Id, "bob", 10m, currency))).IsSuccess);
+        Assert.False((await sender.Send(new GetBalanceQuery(alice.Id, currency))).IsSuccess);
+        Assert.False((await sender.Send(new GetTransactionHistoryQuery(alice.Id, null, null, 0, 10, currency))).IsSuccess);
+        await Assert.ThrowsAsync<ArgumentException>(() => sender.Send(new CreateAccountCommand("alice", currency)));
+        Assert.All(await db.Accounts.ToListAsync(), a => Assert.Equal(0m, a.Balance));
+    }
+
+    [Fact]
+    public async Task AccountListDoesNotExposeOtherUsersAccounts()
+    {
+        var alice = await Register("alice");
+        await Register("bob");
+        await sender.Send(new DepositCommand(alice.Id, 50m, Currency.EUR));
+        db.ChangeTracker.Clear();
+        var accounts = await sender.Send(new GoldenCrown.Features.Finance.GetAccounts.GetAccountsQuery(alice.Id));
+        Assert.Equal(3, accounts.Count);
+        Assert.Equal(50m, accounts.Single(a => a.Currency == Currency.EUR).Balance);
+        Assert.Empty(db.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task CurrencyIsRequiredInWriteRequests()
+    {
+        var deposit = new GoldenCrown.DTOs.Validators.DepositRequestValidator();
+        var transfer = new GoldenCrown.DTOs.Validators.TransferRequestValidator();
+        Assert.False((await deposit.ValidateAsync(new GoldenCrown.DTOs.Finance.DepositRequest { Amount = 10 })).IsValid);
+        Assert.False((await transfer.ValidateAsync(new GoldenCrown.DTOs.Finance.TransferRequest { Amount = 10, ReceiverLogin = "alice" })).IsValid);
+        foreach (var currency in Enum.GetValues<Currency>())
+        {
+            Assert.True((await deposit.ValidateAsync(new GoldenCrown.DTOs.Finance.DepositRequest { Amount = 10, Currency = currency })).IsValid);
+            Assert.True((await transfer.ValidateAsync(new GoldenCrown.DTOs.Finance.TransferRequest { Amount = 10, ReceiverLogin = "alice", Currency = currency })).IsValid);
+        }
+    }
     public void Dispose()
     {
         scope.Dispose();

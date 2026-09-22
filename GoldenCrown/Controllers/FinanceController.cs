@@ -1,3 +1,5 @@
+using GoldenCrown.Models;
+using GoldenCrown.Features.Finance.GetAccounts;
 using FluentValidation;
 using GoldenCrown.Attributes;
 using GoldenCrown.DTOs.Finance;
@@ -22,10 +24,14 @@ namespace GoldenCrown.Controllers
             _sender = sender;
         }
 
+        [HttpGet("accounts")]
+        public async Task<IActionResult> GetAccountsAsync(CancellationToken cancellationToken)
+            => Ok(await _sender.Send(new GetAccountsQuery(GetUserid()), cancellationToken));
+
         [HttpGet("balance")]
-        public async Task<IActionResult> GetBalanceAsync(CancellationToken cancellationToken)
+        public async Task<IActionResult> GetBalanceAsync([FromQuery] Currency currency, CancellationToken cancellationToken)
         {
-            var balanceResult = await _sender.Send(new GetBalanceQuery(GetUserid()), cancellationToken);
+            var balanceResult = await _sender.Send(new GetBalanceQuery(GetUserid(), currency), cancellationToken);
             if (!balanceResult.IsSuccess)
             {
                 return BadRequest(new
@@ -36,7 +42,7 @@ namespace GoldenCrown.Controllers
             }
             return Ok(new
             {
-                Balance = balanceResult.Value
+                Currency = currency, Balance = balanceResult.Value
             });
         }
         [HttpPost("deposit")]
@@ -46,7 +52,7 @@ namespace GoldenCrown.Controllers
             {
                 return BadRequest(validationResult.ToDictionary());
             }
-            var depositResult = await _sender.Send(new DepositCommand(GetUserid(), request.Amount), cancellationToken);
+            var depositResult = await _sender.Send(new DepositCommand(GetUserid(), request.Amount, request.Currency), cancellationToken);
             if (depositResult.IsSuccess) {
                 return Ok();
             }
@@ -59,7 +65,7 @@ namespace GoldenCrown.Controllers
             {
                 return BadRequest(validationResult.ToDictionary());
             }
-            var transferResult = await _sender.Send(new TransferCommand(GetUserid(), request.ReceiverLogin, request.Amount), cancellationToken);
+            var transferResult = await _sender.Send(new TransferCommand(GetUserid(), request.ReceiverLogin, request.Amount, request.Currency), cancellationToken);
             if (transferResult.IsSuccess) {
                 return Ok();
             }
@@ -75,7 +81,7 @@ namespace GoldenCrown.Controllers
             {
                 return BadRequest(validationResult.ToDictionary());
             }
-            var historyResult = await _sender.Send(new GetTransactionHistoryQuery(GetUserid(), request.From, request.To, request.Offset, request.Limit), cancellationToken);
+            var historyResult = await _sender.Send(new GetTransactionHistoryQuery(GetUserid(), request.From, request.To, request.Offset, request.Limit, request.Currency), cancellationToken);
             if (historyResult.IsSuccess)
             {
                 return Ok(historyResult.Value);

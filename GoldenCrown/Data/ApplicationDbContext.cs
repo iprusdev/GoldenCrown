@@ -1,4 +1,4 @@
-﻿using GoldenCrown.Models;
+using GoldenCrown.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using static System.Collections.Specialized.BitVector32;
@@ -22,9 +22,14 @@ namespace GoldenCrown.Data
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<User>()
-                .HasOne(user => user.Account)
+                .HasMany(user => user.Accounts)
                 .WithOne(account => account.User)
-                .HasForeignKey<Account>(account => account.UserId);
+                .HasForeignKey(account => account.UserId);
+            modelBuilder.Entity<Account>().HasIndex(account => new { account.UserId, account.Currency }).IsUnique();
+            modelBuilder.Entity<Account>().Property(account => account.Currency).HasConversion<string>().HasMaxLength(3);
+            modelBuilder.Entity<Transaction>().Property(transaction => transaction.Currency).HasConversion<string>().HasMaxLength(3);
+            modelBuilder.Entity<Account>().ToTable(table => table.HasCheckConstraint("CK_Accounts_Currency", "[Currency] IN ('USD', 'EUR', 'BYN')"));
+            modelBuilder.Entity<Transaction>().ToTable(table => table.HasCheckConstraint("CK_Transactions_Currency", "[Currency] IN ('USD', 'EUR', 'BYN')"));
             modelBuilder.Entity<Session>()
                 .HasKey(session => session.UserId);
             modelBuilder.Entity<User>()
